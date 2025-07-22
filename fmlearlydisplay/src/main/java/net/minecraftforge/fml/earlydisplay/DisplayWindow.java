@@ -14,7 +14,9 @@ import net.minecraftforge.fml.loading.ImmediateWindowProvider;
 import net.minecraftforge.fml.loading.progress.StartupNotificationManager;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.glfw.GLFWImage;
 import org.lwjgl.glfw.GLFWVidMode;
+import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
@@ -28,11 +30,11 @@ import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -76,7 +78,7 @@ public class DisplayWindow implements ImmediateWindowProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger("EARLYDISPLAY");
     private final AtomicBoolean animationTimerTrigger = new AtomicBoolean(true);
 
-    private ColourScheme colourScheme = ColourScheme.RED;
+    private ColourScheme colourScheme = ColourScheme.BLACK;
     private ElementShader elementShader;
 
     private RenderElement.DisplayContext context;
@@ -99,12 +101,14 @@ public class DisplayWindow implements ImmediateWindowProvider {
     private int winHeight;
     private int winX;
     private int winY;
+    private int backgroundTextureId;
 
     private final Semaphore renderLock = new Semaphore(1);
     private boolean maximized;
     private String glVersion;
     private SimpleFont font;
     private Runnable repaintTick = ()->{};
+
 
     @Override
     public String name() {
@@ -138,12 +142,12 @@ public class DisplayWindow implements ImmediateWindowProvider {
                 var keyName = "darkMojangStudiosBackground:";
                 for (String line : optionLines) {
                     if (line.startsWith(keyName)) {
-                        this.colourScheme = line.startsWith("true", keyName.length()) ? ColourScheme.BLACK : ColourScheme.RED;
+                        this.colourScheme = line.startsWith("true", keyName.length()) ? ColourScheme.BLACK : ColourScheme.BLACK;
                         break;
                     }
                 }
             } catch (IOException e) {
-                this.colourScheme = ColourScheme.RED; // fallback to red colourScheme
+                this.colourScheme = ColourScheme.BLACK; // fallback to red colourScheme
             }
         }
         this.maximized = parsed.has(maximizedopt) || FMLConfig.getBoolConfigValue(FMLConfig.ConfigValue.EARLY_WINDOW_MAXIMIZED);
@@ -194,6 +198,42 @@ public class DisplayWindow implements ImmediateWindowProvider {
         }
     }
 
+    private void initBackground() {
+        try {
+            int[] imgSize = STBHelper.loadTextureFromClasspath("background.png", 1000000, GL_TEXTURE0 + RenderElement.INDEX_TEXTURE_OFFSET);
+            backgroundTextureId = RenderElement.INDEX_TEXTURE_OFFSET;
+        } catch (Exception e) {
+            LOGGER.error("Failed to load background image", e);
+        }
+    }
+
+    private void renderBackground() {
+        if (backgroundTextureId > 0) {
+            context.elementShader().updateTextureUniform(backgroundTextureId);
+            context.elementShader().updateRenderTypeUniform(ElementShader.RenderType.TEXTURE);
+
+            SimpleBufferBuilder bb = new SimpleBufferBuilder(256);
+            bb.begin(SimpleBufferBuilder.Format.POS_TEX_COLOR, SimpleBufferBuilder.Mode.QUADS);
+
+            float x0 = -1.0f;
+            float x1 = fbWidth;
+            float y0 = -1.0f;
+            float y1 = fbHeight;
+
+            float u0 = 0f;
+            float u1 = 1f;
+            float v0 = 0f;
+            float v1 = 1f;
+
+            int color = 0xFFFFFFFF;
+
+            QuadHelper.loadQuad(bb, x0, x1, y0, y1, u0, u1, v0, v1, color);
+            bb.draw();
+        } else {
+            LOGGER.error("Failed to load background image");
+        }
+    }
+
     /**
      * Render initialization methods called by the Render Thread.
      * It compiles the fragment and vertex shaders for rendering text with STB, and sets up basic render framework.
@@ -208,6 +248,8 @@ public class DisplayWindow implements ImmediateWindowProvider {
         createCapabilities();
         LOGGER.info("GL info: "+ glGetString(GL_RENDERER) + " GL version " + glGetString(GL_VERSION) + ", " + glGetString(GL_VENDOR));
 
+        initBackground();
+
         elementShader = new ElementShader();
         try {
             elementShader.init();
@@ -217,28 +259,23 @@ public class DisplayWindow implements ImmediateWindowProvider {
         }
 
         // Set the clear color based on the colour scheme
-        glClearColor(colourScheme.background().redf(), colourScheme.background().greenf(), colourScheme.background().bluef(), 1f);
+//        glClearColor(colourScheme.background().redf(), colourScheme.background().greenf(), colourScheme.background().bluef(), 1f);
+
 
         // we always render to an 854x480 texture and then fit that to the screen - with a scale factor
         this.context = new RenderElement.DisplayContext(854, 480, fbScale, elementShader, colourScheme, performanceInfo);
         framebuffer = new EarlyFramebuffer(this.context);
         try {
-            this.font = new SimpleFont("Monocraft.ttf", fbScale, 200000, 1 + RenderElement.INDEX_TEXTURE_OFFSET);
+            this.font = new SimpleFont("Poppins.ttf", 20, 200000, 1 + RenderElement.INDEX_TEXTURE_OFFSET);
         } catch (Throwable t) {
             LOGGER.error("Crash during font initialization", t);
             crashElegantly("An error occurred initializing a font for rendering. "+t.getMessage());
         }
         this.elements = new ArrayList<>(List.of(
-                RenderElement.anvil(font),
                 RenderElement.logMessageOverlay(font),
-                RenderElement.forgeVersionOverlay(font, mcVersion+"-"+forgeVersion.split("-")[0]),
-                RenderElement.performanceBar(font),
-                RenderElement.progressBars(font)
+                RenderElement.logo(),
+                RenderElement.spinner()
         ));
-
-        var date = Calendar.getInstance();
-        if (FMLConfig.getBoolConfigValue(FMLConfig.ConfigValue.EARLY_WINDOW_SQUIR) || (date.get(Calendar.MONTH) == Calendar.APRIL && date.get(Calendar.DAY_OF_MONTH) == 1))
-            this.elements.add(0, RenderElement.squir());
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -257,6 +294,8 @@ public class DisplayWindow implements ImmediateWindowProvider {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        renderBackground();
 
         this.elements.removeIf(element -> !element.render(context, framecount));
         if (animationTimerTrigger.compareAndSet(true, false)) // we only increment the framecount on a periodic basis
@@ -363,8 +402,8 @@ public class DisplayWindow implements ImmediateWindowProvider {
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-        String vanillaWindowTitle = "Minecraft* ";
-        if (mcVersion != null) vanillaWindowTitle += mcVersion;
+        String vanillaWindowTitle = "The Site v1";
+//        if (mcVersion != null) vanillaWindowTitle += mcVersion;
 
         // this emulates what we would get without early progress window
         // as vanilla never sets these, so GLFW uses the first window title
@@ -465,20 +504,7 @@ public class DisplayWindow implements ImmediateWindowProvider {
 
         glfwSetWindowPos(window, (vidmode.width() - this.winWidth) / 2 + monitorX, (vidmode.height() - this.winHeight) / 2 + monitorY);
 
-        // Attempt setting the icon
-//        int[] channels = new int[1];
-//        try (var glfwImgBuffer = GLFWImage.create(MemoryUtil.getAllocator().malloc(GLFWImage.SIZEOF), 1)) {
-//            final ByteBuffer imgBuffer;
-//            try (GLFWImage glfwImages = GLFWImage.malloc()) {
-//                imgBuffer = STBHelper.loadImageFromClasspath("forge_logo.png", 20000, x, y, channels);
-//                glfwImgBuffer.put(glfwImages.set(x[0], y[0], imgBuffer));
-//                glfwSetWindowIcon(window, glfwImgBuffer);
-//                STBImage.stbi_image_free(imgBuffer);
-//            }
-//        } catch (NullPointerException e) {
-//            System.err.println("Failed to load forge logo");
-//        }
-//        handleLastGLFWError((error, description) -> LOGGER.debug(String.format("Suppressing GLFW icon error: [0x%X]%s", error, description)));
+        setWindowIcon(window); // Set the window icon
 
         glfwSetFramebufferSizeCallback(window, this::fbResize);
         glfwSetWindowPosCallback(window, this::winMove);
@@ -495,8 +521,34 @@ public class DisplayWindow implements ImmediateWindowProvider {
         glfwPollEvents();
     }
 
-    private void badWindowHandler(final int code, final long desc) {
-        LOGGER.error("Got error from GLFW window init: "+code+ " "+MemoryUtil.memUTF8(desc));
+    private void setWindowIcon(long window) {
+        int[] channels = new int[1];
+        int[] x = new int[1];
+        int[] y = new int[1];
+
+        try (var stack = MemoryStack.stackPush()) {
+            ByteBuffer imgBuffer = null;
+            try {
+                imgBuffer = STBHelper.loadImageFromClasspath("icon/icon_128x128.png", 20000, x, y, channels);
+                if (imgBuffer == null) {
+                    LOGGER.error("Failed to load forge logo");
+                    return;
+                }
+
+                GLFWImage.Buffer icons = GLFWImage.malloc(1, stack);
+                GLFWImage icon = icons.get(0);
+                icon.set(x[0], y[0], imgBuffer);
+
+                glfwSetWindowIcon(window, icons);
+                LOGGER.info("Window icon set successfully: {}x{}", x[0], y[0]);
+            } catch (Exception e) {
+                LOGGER.error("Failed to set window icon", e);
+            } finally {
+                if (imgBuffer != null) {
+                    STBImage.stbi_image_free(imgBuffer);
+                }
+            }
+        }
     }
 
     private void winResize(long window, int width, int height) {
@@ -630,10 +682,6 @@ public class DisplayWindow implements ImmediateWindowProvider {
         repaintTick.run();
     }
 
-    public void addMojangTexture(final int textureId) {
-        this.elements.add(0, RenderElement.mojang(textureId, framecount));
-//        this.elements.get(0).retire(framecount + 1);
-    }
 
     public void close() {
         // Close the Render Scheduler thread

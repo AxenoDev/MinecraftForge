@@ -50,7 +50,6 @@ public class RenderElement {
         public int scaledWidth() {
             return scale() * width();
         }
-
         public int scaledHeight() {
             return scale() * height();
         }
@@ -62,6 +61,7 @@ public class RenderElement {
     }
 
     public boolean render(DisplayContext ctx, int count) {
+        ctx.elementShader().activate();
         this.renderer.accept(bb, ctx, count);
         return this.retireCount == 0 || this.retireCount < count;
     }
@@ -73,86 +73,62 @@ public class RenderElement {
     private static void startupLogMessages(SimpleBufferBuilder bb, SimpleFont font, DisplayContext context) {
         List<StartupNotificationManager.AgeMessage> messages = StartupNotificationManager.getMessages();
         List<SimpleFont.DisplayText> texts = new ArrayList<>();
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            final StartupNotificationManager.AgeMessage pair = messages.get(i);
-            final float fade = clamp((4000.0f - (float) pair.age() - ( i - 4 ) * 1000.0f) / 5000.0f, 0.0f, 1.0f);
-            if (fade <0.01f) continue;
-            Message msg = pair.message();
-            int colour = Math.min((int)(fade * 255f), globalAlpha) << 24 | 0xFFFFFF;
-            texts.add(new SimpleFont.DisplayText(msg.getText()+"\n", colour));
+        texts.add(new SimpleFont.DisplayText("Lancement de The Site en cours...\n", 0xFFFFFFFF));
+
+        if (!messages.isEmpty()) {
+            Message msg = messages.get(messages.size() - 1).message();
+            texts.add(new SimpleFont.DisplayText(msg.getText(), 0xAFFFFFFF));
         }
 
-        font.generateVerticesForTexts(10, context.scaledHeight() -  texts.size() * font.lineSpacing() + font.descent() - 10, bb, texts.toArray(SimpleFont.DisplayText[]::new));
-    }
-    public static RenderElement monag() {
-        return new RenderElement(RenderElement.initializeTexture("monagstudios.png", 45000, 4, (bb, ctx, sz, frame) -> {
-            var size = 256;
-            var x0 = (ctx.width() - 2 * size) / 2;
-            var y0 = 64;
-            QuadHelper.loadQuad(bb, x0, x0+size, y0, y0+size/2f, 0f, 1f, 0f, 0.5f, 0xFFFFFFFF);
-            QuadHelper.loadQuad(bb, x0+size, x0+2*size, y0, y0+size/2f, 0f, 1f, 0.5f, 1f, 0xFFFFFFFF);
-        }));
-
+        font.generateVerticesForTexts(10, context.scaledHeight() - texts.size() * font.lineSpacing() + font.descent() - 10, bb, texts.toArray(SimpleFont.DisplayText[]::new));
     }
 
-    public static RenderElement mojang(final int textureId, final int frameStart) {
-        return new RenderElement(()->(bb, ctx, frame) -> {
-            var size = 256 * ctx.scale();
-            var x0 = (ctx.scaledWidth() - 2 * size) / 2;
-            var y0 = 64 * ctx.scale() + 32;
-            ctx.elementShader().updateTextureUniform(0);
-            ctx.elementShader().updateRenderTypeUniform(ElementShader.RenderType.TEXTURE);
-            var fade = Math.min((frame - frameStart) * 10, 255);
-            glBindTexture(GL_TEXTURE_2D, textureId);
-            bb.begin(SimpleBufferBuilder.Format.POS_TEX_COLOR, SimpleBufferBuilder.Mode.QUADS);
-            QuadHelper.loadQuad(bb, x0, x0+size, y0, y0+size/2f, 0f, 1f, 0f, 0.5f, (fade << 24) | 0xFFFFFF);
-            QuadHelper.loadQuad(bb, x0+size, x0+2*size, y0, y0+size/2f, 0f, 1f, 0.5f, 1f, (fade << 24) | 0xFFFFFF);
-            bb.draw();
-            glBindTexture(GL_TEXTURE_2D, 0);
-        });
-    }
     public static RenderElement logMessageOverlay(SimpleFont font) {
         return new RenderElement(RenderElement.initializeText(font, RenderElement::startupLogMessages));
     }
 
-    public static RenderElement forgeVersionOverlay(SimpleFont font, String version) {
-        return new RenderElement(RenderElement.initializeText(font, (bb, fnt, ctx)->
-                font.generateVerticesForTexts(ctx.scaledWidth() - font.stringWidth(version) - 10,
-                        ctx.scaledHeight() - font.lineSpacing() + font.descent() - 10, bb,
-                        new SimpleFont.DisplayText(version, ctx.colourScheme.foreground().packedint(RenderElement.globalAlpha)))));
-    }
-    public static RenderElement squir() {
-        return new RenderElement(RenderElement.initializeTexture("squirrel.png", 45000, 3, (bb, context, size, frame) -> {
-            var inset = 5f;
-            var x0 = inset;
-            var x1 = inset + size[0] * context.scale();
-            var y0 = inset;
-            var y1 = inset + size[1] * context.scale();
-            int fade = (int) (Math.cos(frame * Math.PI / 16) * 16) + 16;
-//            int fade = 0xff;
-            var colour = (Math.min(fade, globalAlpha) & 0xff) << 24 | 0xffffff;
-            QuadHelper.loadQuad(bb, x0, x1, y0, y1, 0f, 1f, 0f, 1f, colour);
+    public static RenderElement logo() {
+        return new RenderElement(RenderElement.initializeTexture("logo.png", 400, 6, (bb, ctx, sz, frame) -> {
+            float scaleFactor = 0.5f;
+            var x0 = (ctx.scaledWidth() - sz[0] * ctx.scale() * scaleFactor) / 2;
+            var x1 = (ctx.scaledWidth() + sz[0] * ctx.scale() * scaleFactor) / 2;
+            var y0 = (ctx.scaledHeight() - sz[0] * ctx.scale() * scaleFactor) / 2;
+            var y1 = (ctx.scaledHeight() + sz[0] * ctx.scale() * scaleFactor) / 2;
+            QuadHelper.loadQuad(bb, x0, x1, y0, y1, 0f, 1f, 0f, 1f, 0xFFFFFFFF);
         }));
     }
 
-    public static RenderElement anvil(SimpleFont font) {
-        return new RenderElement(RenderElement.initializeTexture("forge_anvil.png", 20000, 2, (bb, context, size, frame) -> {
-            var x0 = context.scaledWidth() - size[0] * context.scale();
-            var x1 = context.scaledWidth();
-            var y0 = context.scaledHeight() - size[0] * context.scale() - font.descent() - font.lineSpacing();
-            var y1 = context.scaledHeight() - font.descent() - font.lineSpacing();
-            int frameidx = frame % 32;
-            float framepos = (frameidx * (float)size[0]) / size[1];
-            float framesize = size[0] / (float)size[1];
-            QuadHelper.loadQuad(bb, x0, x1, y0, y1, 0f, 1f, framepos, framepos+framesize, globalAlpha << 24 | 0xFFFFFF);
+    public static RenderElement spinner() {
+        return new RenderElement(RenderElement.initializeTexture("spinner.png", 400, 7, (bb, ctx, sz, frame) -> {
+            int spinnerSize = 48 * ctx.scale();
+            int margin = 20 * ctx.scale();
+            int frames = 30;
+
+            var x1 = ctx.scaledWidth() - margin;
+            var x0 = x1 - spinnerSize;
+            var y1 = ctx.scaledHeight() - margin;
+            var y0 = y1 - spinnerSize;
+
+            int frameidx = frame % frames;
+            float framepos = (frameidx * (float)sz[0]) / sz[1];
+            float framesize = sz[0] / (float)sz[1];
+
+            QuadHelper.loadQuad(bb, x0, x1, y0, y1, 0f, 1f, framepos, framepos+framesize, 0xFFFFFFFF);
         }));
     }
+
+    public static RenderElement background() {
+        return new RenderElement(RenderElement.initializeTexture("background.png", 40000, 5, (bb, ctx, sz, frame) -> {
+            var x0 = 0;
+            var x1 = ctx.scaledWidth() * ctx.scale();
+            var y0 = 0;
+            var y1 = ctx.scaledHeight() * ctx.scale();
+            QuadHelper.loadQuad(bb, x0, x1, y0, y1, 0f, 1f, 0f, 1f, 0xFFFFFFFF);
+        }));
+    }
+
     public static RenderElement progressBars(SimpleFont font) {
         return new RenderElement(() -> (bb, ctx, frame) -> RenderElement.startupProgressBars(font, bb, ctx, frame));
-    }
-
-    public static RenderElement performanceBar(SimpleFont font) {
-        return new RenderElement(() -> (bb, ctx, frame) -> RenderElement.memoryInfo(font, bb, ctx, frame));
     }
 
     public static void startupProgressBars(SimpleFont font, final SimpleBufferBuilder buffer, final DisplayContext context, final int frameNumber) {
@@ -170,6 +146,7 @@ public class RenderElement {
         if (acc != null)
             acc.accept(buffer, context, frameNumber);
     }
+
     private static final int BAR_HEIGHT = 20;
     private static final int BAR_WIDTH = 400;
     private static Renderer barRenderer(int cnt, int alpha, SimpleFont font, ProgressMeter pm, DisplayContext context) {
@@ -192,16 +169,6 @@ public class RenderElement {
             var progress = frame % 100;
             return new float[]{clamp((progress - 2) / 100f, 0f, 1f), clamp((progress + 2) / 100f, 0f, 1f)};
         }
-    }
-
-    private static void memoryInfo(SimpleFont font, final SimpleBufferBuilder buffer, final DisplayContext context, final int frameNumber) {
-        var y = 10 * context.scale();
-        PerformanceInfo pi = context.performance();
-        final int colour = hsvToRGB((1.0f - (float)Math.pow(pi.memory(), 1.5f)) / 3f, 1.0f, 0.5f);
-        var bar = progressBar(ctx -> new int[]{(ctx.scaledWidth() - BAR_WIDTH * ctx.scale()) / 2, y, BAR_WIDTH * ctx.scale()}, f -> colour, f -> new float[]{0f, pi.memory()});
-        var width = font.stringWidth(pi.text());
-        Renderer label = (bb, ctx, frame) -> renderText(font, text(ctx.scaledWidth() / 2 - width / 2, y + 18, pi.text(), context.colourScheme.foreground().packedint(globalAlpha)), bb, ctx);
-        bar.then(label).accept(buffer, context, frameNumber);
     }
 
     @FunctionalInterface

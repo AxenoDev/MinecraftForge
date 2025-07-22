@@ -166,7 +166,6 @@ public class SimpleBufferBuilder implements Closeable {
      *
      * @param x The x.
      * @param y The y.
-     * @param z The z.
      * @return The same builder.
      */
     public SimpleBufferBuilder pos(float x, float y) {

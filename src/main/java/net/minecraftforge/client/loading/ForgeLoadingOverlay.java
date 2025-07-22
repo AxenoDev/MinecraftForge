@@ -20,12 +20,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.LoadingOverlay;
 import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ReloadInstance;
 import net.minecraft.util.Mth;
 import net.minecraftforge.fml.StartupMessageManager;
 import net.minecraftforge.fml.earlydisplay.ColourScheme;
 import net.minecraftforge.fml.earlydisplay.DisplayWindow;
+import net.minecraftforge.fml.earlydisplay.RenderElement;
 import net.minecraftforge.fml.loading.progress.ProgressMeter;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
@@ -57,7 +57,6 @@ public class ForgeLoadingOverlay extends LoadingOverlay {
         this.reload = reloader;
         this.onFinish = errorConsumer;
         this.displayWindow = displayWindow;
-        displayWindow.addMojangTexture(mc.getTextureManager().getTexture(new ResourceLocation("textures/gui/title/mojangstudios.png")).getId());
         this.progress = StartupMessageManager.prependProgressBar("Minecraft Progress", 100);
     }
 
@@ -79,7 +78,12 @@ public class ForgeLoadingOverlay extends LoadingOverlay {
             }
             displayWindow.render(0xff);
         } else {
-            GlStateManager._clearColor(colour.redf(), colour.greenf(), colour.bluef(), 1f);
+            RenderSystem.setShader(() -> {
+                displayWindow.context().elementShader().activate();
+                return GameRenderer.getPositionTexColorShader();
+            });
+            RenderElement.background().render(displayWindow.context(), 0);
+            GlStateManager._clearColor(0.0f, 0.0f, 0.0f, 0f);
             GlStateManager._clear(GlConst.GL_COLOR_BUFFER_BIT, Minecraft.ON_OSX);
             displayWindow.render(0xFF);
         }

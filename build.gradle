@@ -869,7 +869,7 @@ project(':fmlonly') {
         packedDependencies = PACKED_DEPS
         from(extraTxts)
         //TODO: make FML installer logo?
-        from(rootProject.file('/forge_installer_logo.png')) {
+        from(rootProject.file('/thesite_logo.png')) {
             rename { 'big_logo.png' }
         }
     }
